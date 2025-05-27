@@ -89,6 +89,12 @@ def get_video_comments(video_id):
     print(f"Усього знайдено {len(comments)} коментарів")
     return comments
 
+# Перевірка на наявність ключових слів
+def has_trigger_words(comment_text):
+    trigger_words = ["scam", "fraud"]
+    comment_lower = comment_text.lower()
+    return any(word in comment_lower for word in trigger_words)
+
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("Отримано команду /start")
@@ -176,9 +182,14 @@ async def check_new_comments():
         # Надсилаємо повідомлення про нові коментарі
         for comment_text, comment_id in new_comments:
             video_url = f"https://www.youtube.com/watch?v={video_id}"
+            # Перевіряємо, чи є ключові слова
+            if has_trigger_words(comment_text):
+                message = f"!!!!!!!!!\nНовий коментар\n{video_url}\n\nКоментар: {comment_text}"
+            else:
+                message = f"Новий коментар\n{video_url}\n\nКоментар: {comment_text}"
             await application.bot.send_message(
                 chat_id=chat_id,
-                text=f"Новий коментар\n{video_url}\n\nКоментар: {comment_text}"
+                text=message
             )
 
 # Налаштування бота
