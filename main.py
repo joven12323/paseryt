@@ -41,26 +41,53 @@ cursor.execute("""
 conn.commit()
 print("База даних ініціалізована")
 
-# Отримання коментарів із YouTube
+# Отримання коментарів із YouTube (включаючи відповіді)
 def get_video_comments(video_id):
     print(f"Отримую коментарі для відео {video_id}...")
-    try:
-        url = f"https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId={video_id}&key={YOUTUBE_API_KEY}&maxResults=100"
-        response = requests.get(url).json()
-        print(f"Відповідь YouTube API: {response}")
-        comments = []
-        if "items" in response:
-            for item in response["items"]:
-                comment = item["snippet"]["topLevelComment"]["snippet"]["textOriginal"]
-                comment_id = item["snippet"]["topLevelComment"]["id"]
-                comments.append((comment, comment_id))
-            print(f"Знайдено {len(comments)} коментарів")
-        else:
-            print("Коментарі відсутні або помилка в структурі відповіді")
-        return comments
-    except Exception as e:
-        print(f"Помилка YouTube API: {e}")
-        return []
+    comments = []
+    next_page_token = None
+
+    while True:
+        try:
+            url = (f"https://www.googleapis.com/youtube/v3/commentThreads?part=snippet,replies&videoId={video_id}"
+                   f"&key={YOUTUBE_API_KEY}&maxResults=100")
+            if next_page_token:
+                url += f"&pageToken={next_page_token}"
+            response = requests.get(url).json()
+            print(f"Відповідь YouTube API: {response}")
+
+            if "items" in response:
+                for item in response["items"]:
+                    # Топ-рівневий коментар
+                    top_comment = item["snippet"]["topLevelComment"]["snippet"]["textOriginal"]
+                    top_comment_id = item["snippet"]["topLevelComment"]["id"]
+                    comments.append((top_comment, top_comment_id))
+                    print(f"Топ-рівневий коментар: {top_comment}, ID: {top_comment_id}")
+
+                    # Відповіді на коментар
+                    if "replies" in item and item["replies"].get("comments"):
+                        for reply in item["replies"]["comments"]:
+                            reply_text = reply["snippet"]["textOriginal"]
+                            reply_id = reply["id"]
+                            comments.append((reply_text, reply_id))
+                            print(f"Відповідь: {reply_text}, ID: {reply_id}")
+
+                print(f"Знайдено {len(comments)} коментарів (включаючи відповіді) на цій сторінці")
+            else:
+                print("Коментарі відсутні або помилка в структурі відповіді")
+                break
+
+            # Перевірка на наступну сторінку
+            next_page_token = response.get("nextPageToken")
+            if not next_page_token:
+                break
+
+        except Exception as e:
+            print(f"Помилка YouTube API: {e}")
+            break
+
+    print(f"Усього знайдено {len(comments)} коментарів")
+    return comments
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -139,13 +166,13 @@ async def check_new_comments():
         for comment_text, comment_id in comments:
             cursor.execute("SELECT * FROM comments WHERE comment_id = ?", (comment_id,))
             if not cursor.fetchone():
-                # Це новий коментар
+                # Це новий коментар (або відповідь)
                 new_comments.append((comment_text, comment_id))
                 cursor.execute("INSERT INTO comments (video_id, comment_text, comment_id) VALUES (?, ?, ?)",
                                (video_id, comment_text, comment_id))
         conn.commit()
 
-        print(f"Знайдено {len(new_comments)} нових коментарів для відео {video_id}")
+        print(f"Знайдено {len(new_comments)} нових коментарів (включаючи відповіді) для відео {video_id}")
         # Надсилаємо повідомлення про нові коментарі
         for comment_text, comment_id in new_comments:
             video_url = f"https://www.youtube.com/watch?v={video_id}"
